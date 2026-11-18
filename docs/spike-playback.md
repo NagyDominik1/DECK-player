@@ -1,113 +1,112 @@
-> Tisztított változat a Deck privát repójából (magyarul; az angol összefoglaló a fő README-ben van).
-> Titkok, belső hivatkozások és projektazonosítók nélkül.
+> Cleaned-up version from Deck's private repository. Magyar változat: [spike-playback-hu.md](spike-playback-hu.md).
+> No secrets, internal references or project identifiers.
 
-> Utóirat: a döntés az lett, hogy a keresés a YouTube Data API-n megy, és a találatot a `playFromUri` indítja.
+> Postscript: the decision was to search through the YouTube Data API and start the chosen result with `playFromUri`.
 
-# Spike: konkrét szám / playlist indítása a YT Musicban
+# Spike: starting a specific song / playlist in YT Music
 
-**Kérdés:** el tudja-e indítani a Deck egy KONKRÉT számot vagy playlistet a YouTube Musicban?
-Ezen múlik a gyorsindítás (Phase 4) és a buli mód automatikus következő száma (Phase 6).
+**Question:** can Deck start a SPECIFIC song or playlist in YouTube Music?
+Quick start (Phase 4) and party mode's automatic next song (Phase 6) depend on it.
 
-**Rövid válasz: igen.** A `MediaController.transportControls.playFromUri()` egy
-`https://music.youtube.com/watch?v=<videoId>` linkkel a háttérben, a YT Music előtérbe hozása
-nélkül elindítja pontosan a kért számot. Sorba állítani ("lejátszás következőként") viszont nem lehet.
+**Short answer: yes.** `MediaController.transportControls.playFromUri()` with a
+`https://music.youtube.com/watch?v=<videoId>` link starts exactly the requested song in the background,
+without bringing YT Music to the front. Adding to the queue ("play next"), however, is not possible.
 
-## Tesztkörnyezet
+## Test setup
 
 | | |
 |---|---|
-| Telefon | Galaxy S25 (SM-S931B), Android 17, One UI 9.0 |
+| Phone | Galaxy S25 (SM-S931B), Android 17, One UI 9.0 |
 | YT Music | 9.45.51 (`com.google.android.apps.youtube.music`) |
-| Dátum | 2026-11-15 |
-| Módszer | Egy ideiglenes fejlesztői gombsor az appban (azóta törölve), adb-vel nyomkodva; az eredmény a logcatből, a `dumpsys media_session` kimenetéből és képernyőképekből jön. Minden teszt más számot indít, így egyértelmű, melyik módszer mit indított. |
+| Date | 2026-11-15 |
+| Method | A temporary developer button row in the app (removed since), pressed over adb; results come from logcat, the output of `dumpsys media_session` and screenshots. Every test starts a different song, so it is clear which method started what. |
 
-Amit a YT Music session magáról hirdet (`PlaybackState.actions = 2600887`, `flags = 3`):
+What the YT Music session advertises about itself (`PlaybackState.actions = 2600887`, `flags = 3`):
 
-| Képesség | Hirdeti? |
+| Capability | Advertised? |
 |---|---|
-| `ACTION_PLAY_FROM_SEARCH` | igen |
-| `ACTION_PLAY_FROM_MEDIA_ID` | igen |
-| `ACTION_PLAY_FROM_URI` | igen |
-| `ACTION_SKIP_TO_QUEUE_ITEM` | nem (de működik, lásd lent) |
-| `FLAG_HANDLES_QUEUE_COMMANDS` (sor szerkesztése) | nem |
-| Sor olvasása (`controller.queue`) | igen, 25 elemes ablak, címe "Következő" |
+| `ACTION_PLAY_FROM_SEARCH` | yes |
+| `ACTION_PLAY_FROM_MEDIA_ID` | yes |
+| `ACTION_PLAY_FROM_URI` | yes |
+| `ACTION_SKIP_TO_QUEUE_ITEM` | no (but it works, see below) |
+| `FLAG_HANDLES_QUEUE_COMMANDS` (editing the queue) | no |
+| Reading the queue (`controller.queue`) | yes, a 25-item window titled "Következő" (Up next) |
 
-Tanulság: a hirdetett képességek nem megbízhatóak. Kettő a háromból hirdetve van, mégsem működik,
-egy pedig nincs hirdetve, mégis működik. Mindent ki kellett próbálni.
+Lesson: the advertised capabilities are not reliable. Two of the three are advertised and still do not work,
+and one is not advertised and works anyway. Everything had to be tried.
 
-## Eredmények
+## Results
 
-"Háttér" = a YT Music fut és van aktív sessionje (szól vagy szünetel), de a Deck van előtérben.
-"Bezárva" = `am force-stop` után, nincs session.
+"Background" = YT Music runs and has an active session (playing or paused), but Deck is in the foreground.
+"Closed" = after `am force-stop`, no session.
 
-| # | Módszer | Működik? | Jó szám? | Előtérbe hozza a YT Musicot? | Megjegyzés |
+| # | Method | Works? | Right song? | Brings YT Music to the front? | Note |
 |---|---|---|---|---|---|
-| 1 | `playFromSearch("Daft Punk One More Time", extras)` (FOCUS + ARTIST + TITLE) | **Nem** | – | nem | Szünetelő lejátszásnál a session `ERROR` állapotba ment: "A szám nem játszható le." Lejátszás közben csendben figyelmen kívül hagyta. |
-| 1b | `playFromSearch("Daft Punk Get Lucky", null)` | **Nem** | – | nem | Semmi nem történt, hiba sincs. |
-| 2a | `playFromMediaId("dQw4w9WgXcQ")` (YouTube videóazonosító) | **Nem** | – | nem | Semmi nem történt. A YT Music saját, belső mediaId-formátumot várhat; ezt nem ismerjük. |
-| 2b | `playFromUri("https://music.youtube.com/watch?v=9bZkp7q19f0")` | **Igen** | igen (Gangnam Style) | **nem** | Szünetelő és éppen szóló állapotból is azonnal vált. A sor lecserélődik a szám "rádiójára" (25 elem). |
-| 2d | `playFromUri(".../watch?v=FTQbiNvZqaY&list=RDAMVMFTQbiNvZqaY")` | **Igen** | igen (Toto – Africa) | nem | Szám + lista együtt: a szám indul, a lista adja a folytatást. |
-| 2g | `playFromUri(".../watch?v=<id>&list=PL…")` nyilvános playlisttel | **Igen** | a lista indult | nem | A megadott videó nem volt a listában, ezért a playlist első száma indult (BELLAKEO). Vagyis a `list` paraméter az erősebb. |
-| 2h | `playFromUri(".../watch?list=PL…")` (csak lista, videó nélkül) | **Igen** | a lista első száma | nem | **Így lehet playlistet indítani a háttérben.** |
-| 2c | `playFromUri(".../playlist?list=LM")` (Kedvelt zenék) | **Nem** | – | nem | Semmi nem történt. |
-| 2f | `playFromUri(".../playlist?list=PL…")` nyilvános playlist | **Nem** | – | nem | A `playlist?list=` URL-forma nem megy, csak a `watch?list=`. |
-| 2e | `playFromUri("https://www.youtube.com/watch?v=…")` | **Nem** | – | nem | Csak a `music.youtube.com` hoszt működik. |
-| 3 | Intent `MEDIA_PLAY_FROM_SEARCH` a YT Music csomagra | **Részben** | – | **igen** | Megnyitja a keresési találatokat ("Queen Bohemian Rhapsody"), de **nem indít el semmit**; a felhasználónak kell rábökni. |
-| 4 | Intent `ACTION_VIEW` `.../watch?v=kJQP7kiw5Fk` | **Igen** | igen (Despacito) | **igen** | Bezárt YT Musicnál is működik: elindítja az appot és a számot. |
-| 5a | Intent `ACTION_VIEW` `.../playlist?list=LM` | **Részben** | – | igen | Megnyitja a playlist oldalát (Lájkolt zenék), de nem indítja el. |
-| 5b | Intent `ACTION_VIEW` `.../watch?v=djV11Xbc914&list=RDAMVM…` | **Igen** | igen (Take On Me) | igen | Szám + lista, elindul. |
-| 6a | `skipToQueueItem(queueId)` a YT Music saját sorában | **Igen** | igen (Cola Song) | nem | A sor már benne lévő elemeire lehet ugrani, pedig a session nem hirdeti. |
-| 6b | Sorhoz adás / "lejátszás következőként" | **Nincs rá mód** | – | – | A session nem kezeli a queue-parancsokat (`FLAG_HANDLES_QUEUE_COMMANDS` hiányzik), és nincs rá intent sem. Nem próbáltam "erőből" elküldeni a parancsot, mert a hivatalos kliens (MediaControllerCompat) is megtagadja ilyen sessionnél. |
+| 1 | `playFromSearch("Daft Punk One More Time", extras)` (FOCUS + ARTIST + TITLE) | **No** | – | no | With playback paused, the session went into `ERROR` state: "This song can't be played." While playing it was silently ignored. |
+| 1b | `playFromSearch("Daft Punk Get Lucky", null)` | **No** | – | no | Nothing happened, no error either. |
+| 2a | `playFromMediaId("dQw4w9WgXcQ")` (YouTube video id) | **No** | – | no | Nothing happened. YT Music probably expects its own internal mediaId format, which we do not know. |
+| 2b | `playFromUri("https://music.youtube.com/watch?v=9bZkp7q19f0")` | **Yes** | yes (Gangnam Style) | **no** | Switches immediately, from paused and from playing. The queue is replaced by the song's "radio" (25 items). |
+| 2d | `playFromUri(".../watch?v=FTQbiNvZqaY&list=RDAMVMFTQbiNvZqaY")` | **Yes** | yes (Toto – Africa) | no | Song + list together: the song starts, the list provides what follows. |
+| 2g | `playFromUri(".../watch?v=<id>&list=PL…")` with a public playlist | **Yes** | the list started | no | The given video was not in the list, so the playlist's first song started. In other words the `list` parameter wins. |
+| 2h | `playFromUri(".../watch?list=PL…")` (list only, no video) | **Yes** | the list's first song | no | **This is how to start a playlist in the background.** |
+| 2c | `playFromUri(".../playlist?list=LM")` (Liked music) | **No** | – | no | Nothing happened. |
+| 2f | `playFromUri(".../playlist?list=PL…")` public playlist | **No** | – | no | The `playlist?list=` URL form does not work, only `watch?list=`. |
+| 2e | `playFromUri("https://www.youtube.com/watch?v=…")` | **No** | – | no | Only the `music.youtube.com` host works. |
+| 3 | Intent `MEDIA_PLAY_FROM_SEARCH` to the YT Music package | **Partly** | – | **yes** | Opens the search results ("Queen Bohemian Rhapsody"), but **starts nothing**; the user has to tap. |
+| 4 | Intent `ACTION_VIEW` `.../watch?v=kJQP7kiw5Fk` | **Yes** | yes (Despacito) | **yes** | Also works with YT Music closed: it launches the app and the song. |
+| 5a | Intent `ACTION_VIEW` `.../playlist?list=LM` | **Partly** | – | yes | Opens the playlist page (Liked music) but does not start it. |
+| 5b | Intent `ACTION_VIEW` `.../watch?v=djV11Xbc914&list=RDAMVM…` | **Yes** | yes (Take On Me) | yes | Song + list, starts. |
+| 6a | `skipToQueueItem(queueId)` in YT Music's own queue | **Yes** | yes (Cola Song) | no | You can jump to items already in the queue, although the session does not advertise it. |
+| 6b | Add to queue / "play next" | **Not possible** | – | – | The session does not handle queue commands (`FLAG_HANDLES_QUEUE_COMMANDS` is missing), and there is no intent for it. I did not try to force the command, because the official client (MediaControllerCompat) refuses it for such a session too. |
 
-### Háttérben / bezárva
+### Background / closed
 
-| Állapot | `playFromUri` (vezérlő) | `ACTION_VIEW` (intent) |
+| State | `playFromUri` (controller) | `ACTION_VIEW` (intent) |
 |---|---|---|
-| YT Music háttérben, szól | működik, háttérben marad | működik, előtérbe jön |
-| YT Music háttérben, szünetel | működik, háttérben marad | működik, előtérbe jön |
-| YT Music bezárva (force-stop) | **nem megy: nincs session, nincs mit vezérelni** | működik: elindítja az appot és a számot, előtérbe jön |
-| Közvetlenül a hidegindítás után | működik (a session létrejött) | – |
+| YT Music in the background, playing | works, stays in the background | works, comes to the front |
+| YT Music in the background, paused | works, stays in the background | works, comes to the front |
+| YT Music closed (force-stop) | **does not work: no session, nothing to control** | works: launches the app and the song, comes to the front |
+| Right after a cold start | works (the session exists) | – |
 
-További megfigyelések:
-- Force-stop után a `MEDIA_PLAY` médiagomb-esemény **nem** éleszti fel a YT Musicot (nem jön létre session).
-  Háttérből tehát nem tudjuk elindítani a bezárt appot; ehhez az `ACTION_VIEW` kell, ami előtérbe hozza.
-- **Nem teszteltem:** a "Legutóbbiak" közül kihúzott (nem force-stoppolt) YT Musicot, valamint azt, hogy a
-  `playFromUri` akkor is megy-e, amikor a Deck maga van háttérben vagy a képernyő le van zárva. A vezérlőhívásra
-  elvileg nem vonatkozik háttérkorlátozás (az `startActivity`-re igen!), de a Decknek ehhez életben kell maradnia
-  (előtér-szolgáltatás), és ezt a Phase 6 elején ki kell próbálni.
-- A videóazonosító sima YouTube-videóazonosító (ugyanaz, amit a YouTube Data API v3 keresés visszaad),
-  tehát a Phase 5 keresése közvetlenül használható bemenetnek.
+More observations:
+- After a force-stop the `MEDIA_PLAY` media key event does **not** wake YT Music up (no session is created).
+  So a closed app cannot be started from the background; that needs `ACTION_VIEW`, which brings it to the front.
+- **Not tested:** a YT Music swiped away from Recents (not force-stopped), and whether `playFromUri` also works
+  when Deck itself is in the background or the screen is locked. Background restrictions should not apply to
+  the controller call (they do apply to `startActivity`!), but Deck has to stay alive for it (foreground
+  service); this had to be tried at the start of Phase 6.
+- The video id is a plain YouTube video id (the same the YouTube Data API v3 search returns),
+  so search results can be used directly as input.
 
-## Ajánlás
+## Recommendation
 
-**A buli mód "következő szám" funkcióját a `playFromUri("https://music.youtube.com/watch?v=<videoId>")`
-hívásra érdemes építeni.** Ez az egyetlen módszer, ami a pontos számot indítja, a háttérben, a YT Music
-előtérbe hozása nélkül.
+**Build party mode's "next song" on `playFromUri("https://music.youtube.com/watch?v=<videoId>")`.**
+It is the only method that starts the exact song, in the background, without bringing YT Music to the front.
 
-Mivel sorba állítani nem lehet, a sort a Decknek kell vezetnie (saját queue):
+Since queueing is not possible, Deck has to run the queue itself (its own queue):
 
-1. A vendég kér egy számot → a Deck a saját sorába teszi (Supabase), a videóazonosítóval együtt.
-2. A Deck figyeli a pozíciót (ezt már most is tudja), és a szám vége előtt kb. 1-2 másodperccel
-   meghívja a `playFromUri`-t a sor következő elemére. ("auto-switch near track end")
-3. Biztonsági háló: ha a váltás lekésett és a YT Music már a saját rádiójából indított valamit
-   (a metaadat megváltozott, de nem a mi számunkra), azonnal `playFromUri` a miénkre.
-4. Ha a saját sor üres, nem csinálunk semmit: a YT Music megy tovább a saját sorával.
+1. A guest requests a song → Deck puts it into its own queue (Supabase), with the video id.
+2. Deck watches the position (it already can), and about 1-2 seconds before the end of the song it calls
+   `playFromUri` for the next item. ("auto-switch near track end")
+3. Safety net: if the switch was late and YT Music already started something from its own radio
+   (the metadata changed, but not to our song), immediately `playFromUri` ours.
+4. If the own queue is empty, do nothing: YT Music goes on with its own queue.
 
-Kockázatok és korlátok:
-- **Nem lesz átúsztatás:** a váltás éles vágás, és a szám utolsó 1-2 másodperce elveszik.
-- **Kell aktív session.** Ha a YT Music be van zárva, a buli mód indításakor egyszer előtérbe kell hozni
-  (`ACTION_VIEW` az első számra, vagy `getLaunchIntentForPackage`), utána már minden mehet a háttérből.
-- **Nem dokumentált viselkedés.** A `playFromUri` támogatása a YT Music belső döntése, egy frissítés
-  elronthatja. Érdemes a hívás után pár másodperccel ellenőrizni, hogy tényleg a kért szám szól-e,
-  és ha nem, tartalékként `ACTION_VIEW`-val próbálkozni (ez előtérbe hozza a YT Musicot).
-- A Decknek a buli alatt a háttérben is futnia kell → előtér-szolgáltatás + a Samsung
-  akkumulátor-optimalizálás alóli kivétel (az onboarding kéri).
+Risks and limits:
+- **No crossfade:** the switch is a hard cut, and the last 1-2 seconds of the song are lost.
+- **An active session is needed.** If YT Music is closed, it has to be brought to the front once when party mode
+  starts (`ACTION_VIEW` for the first song, or `getLaunchIntentForPackage`); after that everything can run
+  from the background.
+- **Undocumented behaviour.** Support for `playFromUri` is YT Music's internal decision; an update can break it.
+  It is worth checking a few seconds after the call that the requested song really plays, and if not,
+  falling back to `ACTION_VIEW` (which brings YT Music to the front).
+- Deck has to run in the background during the party → foreground service + an exemption from Samsung's
+  battery optimization (onboarding asks for it).
 
-A gyorsindításhoz (Phase 4):
-- **Playlist gombok:** `playFromUri(".../watch?list=<playlistId>")`, ha van session; különben
-  `ACTION_VIEW` ugyanerre a linkre. A saját playlistekkel (pl. `LM`, Kedvelt zenék) a `watch?list=` forma
-  később kipróbálva: működik.
-- **Keresőmező:** a `MEDIA_PLAY_FROM_SEARCH` csak a találati listáig visz el, nem indít el semmit.
-  Az eredeti Phase 4 terv erre épített, ezért újra kellett gondolni: vagy elfogadjuk, hogy a keresés a
-  YT Musicban ér véget, vagy a keresést előrehozzuk a YouTube Data API-ra (Phase 5), és a találatot
-  `playFromUri`-val indítjuk.
+For quick start (Phase 4):
+- **Playlist buttons:** `playFromUri(".../watch?list=<playlistId>")` when there is a session; otherwise
+  `ACTION_VIEW` to the same link. With your own playlists (e.g. `LM`, Liked music) the `watch?list=` form
+  was tried later: it works.
+- **Search field:** `MEDIA_PLAY_FROM_SEARCH` only gets as far as the results list, it starts nothing.
+  The original Phase 4 plan relied on it, so it had to be rethought: either accept that the search ends in
+  YT Music, or move the search forward to the YouTube Data API and start the result with `playFromUri`.

@@ -1,111 +1,110 @@
-> Tisztított változat a Deck privát repójából (magyarul; az angol összefoglaló a fő README-ben van).
-> Titkok, belső hivatkozások és projektazonosítók nélkül.
-
-# Deck: dizájnirányok (redesign, 2026-11)
-
-A Phase 2 "Glow + Analog Deck" dizájn visszajelzés alapján túl alap lett: unalmas fontok,
-mindenhol téglalap, borostyán akcent. Ez a dokumentum a kutatást és a belőle kinőtt három
-irányt rögzíti. Mindhárom be volt építve az appba, egy fejlesztői A / B / C váltóval lehetett cserélni őket a telefonon.
+> Cleaned-up version from Deck's private repository. Magyar változat: [design-directions-hu.md](design-directions-hu.md).
+> No secrets, internal references or project identifiers.
 
 | A – Kazetta | B – Lemez | C – Pakli |
 |---|---|---|
 | ![A](design/A-player.png) | ![B](design/B-player.png) | ![C](design/C-player.png) |
 
-## 1. Kutatás: mit láttam, mi működik, mit veszünk át
+# Deck: design directions (redesign, 2026-11)
 
-| Forrás | Mit láttam | Mi működik benne | Mit veszünk át |
+Feedback said the Phase 2 "Glow + Analog Deck" design was too plain: dull fonts, rectangles everywhere,
+an amber accent. This document records the research and the three directions that grew out of it. All
+three were built into the app, and a developer A / B / C switch swapped them on the phone.
+
+## 1. Research: what I saw, what works, what we take
+
+| Source | What I saw | What works | What we take |
 |---|---|---|---|
-| **Material 3 Expressive** (Google, 2025) | Rugós (spring) mozgásrendszer; nagy, egymástól eltérő formák (cookie, sunny, pill, squircle); shape morphing az `androidx.graphics.shapes` könyvtárral (`RoundedPolygon`, `Morph`). | A forma maga is visszajelzés: a gomb állapotváltáskor átalakul, nem csak ikont cserél. A hierarchiát a méret- és formakülönbség hordozza. | Morfoló play gomb (**B**), csipkés "cookie" borítóforma (**B**), rugós animációk mindenhol. |
-| **Nothing OS** | Dot-matrix tipográfia (NDot), monokróm felület, egyetlen akcent; az 5.0 már a Geist fontot is használja a dot font mellett. | Erős, felismerhető identitás nagyon kevés eszközből; a korlátozás maga a stílus. | A "monokróm + egy akcent" fegyelem (**A**, **C**). A dot-matrixot nem vesszük át: túl erősen a Nothing márkájához kötődik. |
-| **Teenage Engineering** (OP-1, TP-7) | Hardveres, játékos, brutalista-de-meleg; világos ház, kevés, státuszt jelző élénk szín; minden vezérlő egy fizikai gomb vagy tárcsa. | Minden elem úgy néz ki, mint amit meg lehet nyomni; a korlátozott felület gyorsabb használatot ad. | **A** irány egésze: világos "készülékház", kerek billentyűk, fader-tekerő, forgó orsók. |
-| **Apple Music / Spotify** now playing | Nagy borító mint fókusz; a dalszöveg teljes képernyős, nagy, félkövér sorokkal, az aktuális sor kiemelésével. A túl nagy borítót sokan kritizálják. | A dalszöveg nézet mint "karaoke" mód; a borítóból vett háttérszín. | A nagy, félkövér dalszövegsorok megmaradnak; a borító mérete a maradék helyhez igazodik (ez már most is így van). |
-| **Metrolist** (YT Music kliens, M3) | Dinamikus színek a borítóból, "player button physics", bottom sheet animációk. | A gombok fizikailag reagálnak (rugó, lenyomódás). | Lenyomódás + rugó minden irányban. |
-| **Namida** | A borítóhoz igazított player színek, **hullámforma tekerősáv**. | A tekerősáv maga is díszítőelem, nem csak egy vonal. | Hullámos tekerősáv (**B**). |
-| **Gramophone** | Minimalista M3, Monet-színek, szavanként szinkronizált dalszöveg, dalszöveg widget. | Visszafogott, gyors, a dalszöveg kiemelt funkció. | Megerősíti, hogy a dalszöveg nézet a fő "plusz" egy ilyen appban. |
+| **Material 3 Expressive** (Google, 2025) | A spring motion system; big, contrasting shapes (cookie, sunny, pill, squircle); shape morphing with the `androidx.graphics.shapes` library (`RoundedPolygon`, `Morph`). | The shape itself is feedback: a button changes form when its state changes, not just its icon. Size and shape differences carry the hierarchy. | Morphing play button (**B**), scalloped "cookie" cover shape (**B**), spring animations everywhere. |
+| **Nothing OS** | Dot-matrix type (NDot), monochrome surfaces, a single accent; 5.0 also uses the Geist font next to the dot font. | A strong, recognisable identity from very few means; the constraint is the style. | The "monochrome + one accent" discipline (**A**, **C**). Not the dot matrix: it is too tied to Nothing's brand. |
+| **Teenage Engineering** (OP-1, TP-7) | Hardware-like, playful, brutalist but warm; a light housing, few vivid colors that signal state; every control is a physical button or knob. | Everything looks like it can be pressed; the limited surface makes use faster. | Direction **A** as a whole: a light "device housing", round keys, a fader seek bar, spinning reels. |
+| **Apple Music / Spotify** now playing | A big cover as the focus; full-screen lyrics with large bold lines and the current line highlighted. Many criticise the oversized cover. | Lyrics as a "karaoke" mode; a background color taken from the cover. | The large, bold lyric lines stay; the cover size adapts to the remaining space (as it already does). |
+| **Metrolist** (YT Music client, M3) | Dynamic colors from the cover, "player button physics", bottom sheet animations. | Buttons react physically (spring, press). | Press + spring in every direction. |
+| **Namida** | Player colors matched to the cover, a **waveform seek bar**. | The seek bar is decoration too, not just a line. | Wavy seek bar (**B**). |
+| **Gramophone** | Minimalist M3, Monet colors, word-synced lyrics, a lyrics widget. | Restrained, fast, lyrics as a key feature. | Confirms that the lyrics view is the main "extra" in an app like this. |
 
-Közös tanulság: a jó lejátszók **egy** emlékezetes elemre költik a merészséget
-(morfoló gomb, hullámzó tekerő, forgó orsó), a többi felület csendes.
+Common lesson: good players spend their boldness on **one** memorable element
+(a morphing button, a wavy seek bar, a spinning reel); the rest of the surface is quiet.
 
-Források:
+Sources:
 [Android Authority – Material 3 Expressive](https://www.androidauthority.com/google-material-3-expressive-features-changes-availability-devices-3556392),
-[Nothing – közösségi munkák / NDot](https://au.nothing.tech/blogs/news/celebrating-our-communitys-work),
+[Nothing – community work / NDot](https://au.nothing.tech/blogs/news/celebrating-our-communitys-work),
 [Digital Trends – Nothing OS 5.0](https://www.digitaltrends.com/phones/nothing-os-5-0-wants-you-to-stop-switching-apps-and-start-living-in-your-phone/),
-[Teenage Engineering dizájnelemzés](https://blakecrosley.com/guides/design/teenage-engineering),
+[Teenage Engineering design analysis](https://blakecrosley.com/guides/design/teenage-engineering),
 [OP-1 Field review](https://magazinmehatronika.com/en/op-1-field-review),
 [Metrolist](https://sourceforge.net/projects/metrolist.mirror/),
 [Namida](https://alternativeto.net/software/namida/about),
 [Gramophone (F-Droid)](https://f-droid.org/en/packages/org.akanework.gramophone/),
 [Spotify Now Playing view](https://newsroom.spotify.com/?p=23515).
 
-Megjegyzés: a keresés kevés első kézből származó forrást adott (sok harmadik fél által
-készített összefoglaló volt), ezért a fenti megfigyelések egy része másodkézből származik.
+Note: the search turned up few first-hand sources (many were third-party summaries), so some of the
+observations above are second-hand.
 
-## 2. A három irány
+## 2. The three directions
 
-Mindhárom ugyanazt a felületet adja (player, dalszöveg, engedély, üres állapot), a működés közös.
-Ami irányonként más: paletta, fontok, formák, gombarányok, tekerősáv, VU, kis gombok, háttér, logó.
+All three provide the same surfaces (player, lyrics, permission, empty state); the behaviour is shared.
+What differs per direction: palette, fonts, shapes, button proportions, seek bar, VU, small buttons, background, logo.
 
-### A – "Kazetta" (hardveres, Teenage Engineering-szellem)
-
-| | |
-|---|---|
-| Hangulat | Egy világos, matt műanyag zsebkészülék. Játékos, kézzelfogható, "meg lehet nyomni". |
-| Paletta | Ház `#D8D9D3`, billentyű `#ECEDE7`, tinta `#15161A`, másodlagos `#45474D`, akcent **kobaltkék `#2340D8`** (fix). Kontraszt: tinta/ház 12,7:1, másodlagos 6,5:1, fehér/kék 7,5:1. |
-| Fontok | **Archivo** (változtatható szélességű grotesk): címekhez széles (Expanded) és vastag vágás, szöveghez normál. |
-| Formák | Kerek billentyűk: nagy kék kör play gomb (96dp), kisebb világos körök előző/következő (64dp); pill alakú címkegombok; a borító egy "kazettaablakban". |
-| Tekerő | Fader: besüllyesztett vályú, kék kitöltés, kerek "gomb" fogó. |
-| VU helyett | Két forgó **orsó** (kazettaorsó), csak lejátszás közben forog. |
-| Háttér | Nincs elmosott színfolt: egyszínű készülékház. A mozgás az orsókban van. |
-| Logó | Kazetta: ház, ablak, két kék orsó. |
-
-### B – "Lemez" (Material 3 Expressive, sötét, borítóból színezve)
+### A – "Kazetta" (cassette: hardware, Teenage Engineering spirit)
 
 | | |
 |---|---|
-| Hangulat | Lemezjátszó egy sötét klubban. Puha, organikus, rugós. |
-| Paletta | Háttér `#120F17`, felület `#1E1A25`, szöveg `#F2EEF7` (16,6:1), másodlagos 72% (8,9:1). Akcent **a borítóból** jön (Palette, világosra igazítva, hogy sötét háttéren olvasható maradjon), fallback levendula `#C7B2FF` (10,2:1). |
-| Fontok | **Bricolage Grotesque** (karakteres, optikai méretezésű grotesk), címekhez ExtraBold. |
-| Formák | A borító **csipkés "cookie" formába** vágva, lejátszás közben lassan forog, mint egy lemez. A play gomb **shape morph**: lejátszáskor csipkés "napocska", szünetben lekerekített négyzet, rugós átmenettel. Előző/következő: tonális pill. |
-| Tekerő | **Hullámos** vonal a lejátszott részen (M3 Expressive), a hátralévő rész egyenes. |
-| VU | 5 lekerekített pálca az akcentszínnel. |
-| Háttér | A meglévő elmosott színfoltok a borító színeiből. |
-| Logó | Hanglemez csipkés címkével. |
+| Mood | A light, matte plastic pocket device. Playful, tangible, "you can press it". |
+| Palette | Housing `#D8D9D3`, key `#ECEDE7`, ink `#15161A`, secondary `#45474D`, accent **cobalt blue `#2340D8`** (fixed). Contrast: ink/housing 12.7:1, secondary 6.5:1, white/blue 7.5:1. |
+| Fonts | **Archivo** (a variable-width grotesque): wide (Expanded) and bold cuts for titles, normal for text. |
+| Shapes | Round keys: a big blue circular play button (96dp), smaller light circles for previous/next (64dp); pill-shaped label buttons; the cover sits in a "cassette window". |
+| Seek bar | Fader: a recessed trough, blue fill, a round "knob" handle. |
+| Instead of a VU | Two spinning **reels** (cassette reels), turning only during playback. |
+| Background | No blurred color blobs: a single-color housing. The motion is in the reels. |
+| Logo | A cassette: housing, window, two blue reels. |
 
-### C – "Pakli" (kártyapakli, buli mód felé)
+### B – "Lemez" (record: Material 3 Expressive, dark, colored by the cover)
 
 | | |
 |---|---|
-| Hangulat | Kártyaasztal egy házibulin. Elegáns, kicsit játékos, a "deck of cards" jelentésre épít. |
-| Paletta | Posztózöld `#0E3B2D`, kártyalap `#FBFAF6`, szöveg `#F6F7F2` (11,6:1), másodlagos 72% (6,8:1), akcent **kártyapiros `#D3283D`** (fix; fehér rajta 5,1:1, piros a kártyalapon 4,9:1). |
-| Fontok | **Bodoni Moda** (kontrasztos didone, kártyalapok indexeihez illik) címekhez és a dalszöveghez, **Schibsted Grotesk** a kisebb szövegekhez. |
-| Formák | A borító egy **kártyalapon** ül (sarokindex a cím kezdőbetűjével és egy ♦ jellel), számváltáskor a lap "megfordul". A play gomb egy **zseton**: piros kör, fehér sávokkal a peremén. Előző/következő: körvonalas körök. |
-| Tekerő | Vékony fehér vonal, a fogó egy piros ♦. |
-| VU | Zsetonoszlopok: kis ellipszisekből álló halmok. |
-| Háttér | Posztó, finom középső fénnyel (vignetta). |
-| Logó | Két legyezőszerűen elcsúsztatott kártya, elöl piros káró. |
+| Mood | A record player in a dark club. Soft, organic, springy. |
+| Palette | Background `#120F17`, surface `#1E1A25`, text `#F2EEF7` (16.6:1), secondary 72% (8.9:1). The accent comes **from the cover** (Palette, lightened so it stays readable on dark), fallback lavender `#C7B2FF` (10.2:1). |
+| Fonts | **Bricolage Grotesque** (a characterful grotesque with optical sizes), ExtraBold for titles. |
+| Shapes | The cover is cut into a **scalloped "cookie" shape** and slowly turns during playback, like a record. The play button is a **shape morph**: a scalloped "sunny" while playing, a rounded square when paused, with a springy transition. Previous/next: tonal pills. |
+| Seek bar | A **wavy** line on the played part (M3 Expressive), the rest straight. |
+| VU | 5 rounded bars in the accent color. |
+| Background | The existing blurred color blobs from the cover's colors. |
+| Logo | A record with a scalloped label. |
 
-## 3. Közös szabályok
+### C – "Pakli" (deck of cards, towards party mode)
 
-- Érintési felület mindenhol legalább 48dp.
-- A play gomb a fókusz (a legnagyobb elem), az előző/következő másodlagos.
-- Minden nyomható elem lenyomódik (scale) és haptikus visszajelzést ad.
-- Az irányok egy közös "skin" interfészen keresztül adták a színeket, fontokat, formákat
-  és komponenseket, irányonként egy fájlban; a döntés után a két vesztes fájl, a fontjaik, logóik
-  és launcher ikonjaik törölve lettek.
-- Launcher ikon (adaptive + monochrome) mindhárom irányhoz készül, de egyszerre csak egy lehet
-  aktív a manifestben (`android:icon`).
+| | |
+|---|---|
+| Mood | A card table at a house party. Elegant, a bit playful, built on the "deck of cards" meaning. |
+| Palette | Felt green `#0E3B2D`, card `#FBFAF6`, text `#F6F7F2` (11.6:1), secondary 72% (6.8:1), accent **card red `#D3283D`** (fixed; white on it 5.1:1, red on the card 4.9:1). |
+| Fonts | **Bodoni Moda** (a high-contrast didone that suits card indices) for titles and lyrics, **Schibsted Grotesk** for smaller text. |
+| Shapes | The cover sits on a **playing card** (a corner index with the title's first letter and a ♦), and the card "flips" when the track changes. The play button is a **chip**: a red circle with white stripes on its rim. Previous/next: outlined circles. |
+| Seek bar | A thin white line, the handle is a red ♦. |
+| VU | Chip stacks: piles of small ellipses. |
+| Background | Felt, with a soft light in the middle (vignette). |
+| Logo | Two fanned cards, a red diamond in front. |
 
-## Döntés: A – Kazetta, borító-gradienttel
+## 3. Shared rules
 
-A "Kazetta" irány nyert, világos marad. A B és C irány kódja törölve lett (a git történetben megvan),
-a fenti leírás és a [design/](design/) mappa `A-*`, `B-*`, `C-*` képei a dizájnfolyamat dokumentációjaként maradnak.
+- Touch targets at least 48dp everywhere.
+- The play button is the focus (the biggest element); previous/next are secondary.
+- Every pressable element presses in (scale) and gives haptic feedback.
+- The directions provided colors, fonts, shapes and components through a shared "skin" interface, one file
+  per direction; after the decision the two losing files, their fonts, logos and launcher icons were deleted.
+- A launcher icon (adaptive + monochrome) was made for all three, but only one can be active in the
+  manifest at a time (`android:icon`).
 
-Változás az eredeti A-hoz képest: az egyszínű házba **a borító színeiből készült, lágy pasztell
-gradient** került (felül a fő szín, jobb felső sarokban egy második, bal alul egy halvány harmadik).
-A színek 14–32%-os erővel keverednek a világos alapba, és ha egy szín túl sötét lenne, az erősség
-addig csökken, amíg a másodlagos szöveg is meglesz 4.5:1 kontraszttal (unit teszt ellenőrzi a legrosszabb
-eseteket). Szürke / fekete-fehér borítónál alig látható semleges árnyalat, borító nélkül halvány kobalt.
+## Decision: A – Kazetta, with a cover gradient
 
-Végleges kép (v1.0): [design/final-player.png](design/final-player.png). A v1.1-ben (dizájn 2.0) jött a második,
-REC-piros akcent (play gomb, buli, élő jelzések), a borító-mesh háttér és az animációk; a mai állapot a fő README képein látszik.
+The "Kazetta" direction won and stays light. The code of B and C was deleted (it is in the git history); the
+description above and the `A-*`, `B-*`, `C-*` images in the [design/](design/) folder remain as documentation of the design process.
 
+Change from the original A: the single-color housing got **a soft pastel gradient made from the cover's
+colors** (the main color at the top, a second one in the top-right corner, a faint third one bottom left).
+The colors are mixed into the light base at 14–32% strength, and if a color would be too dark, the strength
+goes down until the secondary text still has 4.5:1 contrast (a unit test checks the worst cases). A grey /
+black-and-white cover gives a barely visible neutral tint, no cover gives a faint cobalt.
+
+Final image (v1.0): [design/final-player.png](design/final-player.png). Version 1.1 (design 2.0) added a second,
+REC-red accent (play button, party, live marks), the cover mesh background and the animations; the current
+look is in the main README's images.

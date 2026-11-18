@@ -127,8 +127,9 @@ flowchart LR
 
 ## Engineering decisions
 
-Longer write-ups (in Hungarian): [the spike](docs/spike-playback.md), [party design](docs/party-design.md),
-[design directions](docs/design-directions.md). Two code excerpts: [snippets/](snippets/).
+Longer write-ups: [the spike](docs/spike-playback.md), [party design](docs/party-design.md),
+[design directions](docs/design-directions.md) (each also in Hungarian, `-hu.md`). Two code excerpts:
+[snippets/](snippets/).
 
 ### 1. The spike: how do you start a specific song in someone else's app?
 
@@ -252,5 +253,6 @@ a Deck csak hivatalos Android API-kon át olvassa és vezérli.
 
 - **Kell hozzá:** Android 12+, YouTube Music és YouTube Music Premium.
 - **Telepítés:** APK a [Releases](../../releases) oldalról; első induláskor értesítési hozzáférést kér.
-- **Mérnöki döntések** részletesen (magyarul): [docs/](docs/); két kódrészlet: [snippets/](snippets/).
+- **Részletesen, magyarul:** [spike](docs/spike-playback-hu.md), [buli mód terve](docs/party-design-hu.md),
+  [dizájnirányok](docs/design-directions-hu.md); két kódrészlet: [snippets/](snippets/).
 - **A forráskód privát, kérésre megmutatom.**

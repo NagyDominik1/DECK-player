@@ -1,294 +1,297 @@
-> Tisztított változat a Deck privát repójából (magyarul; az angol összefoglaló a fő README-ben van).
-> Titkok, belső hivatkozások és projektazonosítók nélkül.
+> Cleaned-up version from Deck's private repository. Magyar változat: [party-design-hu.md](party-design-hu.md).
+> No secrets, internal references or project identifiers.
 
-# Buli mód ("Aux") – teljes terv (Phase 6A + 6B)
+# Party mode ("Aux"): the full design (Phase 6A + 6B)
 
-Állapot: megépült és fut (szerver, vendég weboldal, a Deck host oldala).
+Status: built and running (server, guest web page, Deck's host side).
 
-## 1. Mi ez egy mondatban
+## 1. In one sentence
 
-A host a Deckben bulit indít, a vendégek QR-kóddal egy weboldalra jutnak, ahol számot kérhetnek és
-szavazhatnak; a sort egy Postgres adatbázis tartja, a sorrendet a szerver számolja, a Deck pedig a szám
-vége előtt ~1,5 mp-cel elindítja a sor elejét a YT Musicban.
+The host starts a party in Deck, guests reach a web page through a QR code where they can request songs and
+vote; the queue lives in a Postgres database, the server computes the order, and Deck starts the head of the
+queue in YT Music about 1.5 s before the current song ends.
 
 ```
-  Vendég telefonja (böngésző)            Supabase                             Host telefonja
+  Guest's phone (browser)                Supabase                             Host's phone
  ┌──────────────────────────┐      ┌─────────────────────────────┐      ┌──────────────────────┐
  │ party-web (Vercel)       │      │ Postgres                    │      │ Deck (6B)            │
- │  index.html + app.js     │ RPC  │  táblák + RLS               │ RPC  │  buli képernyő, QR   │
- │  - olvas: REST (SELECT)  │─────▶│  szabályok: SECURITY DEFINER│◀─────│  host_* függvények   │
- │  - ír: guest_* RPC       │      │  függvények                 │      │  host_secret-tel     │
- │  - élő: Realtime (WS)    │◀─────│  Realtime (postgres_changes)│─────▶│  sor figyelése       │
- │  - keresés: Edge Function│─────▶│ Edge Function: search ──────┼──▶ YouTube Data API       │
+ │  index.html + app.js     │ RPC  │  tables + RLS               │ RPC  │  party screen, QR    │
+ │  - read: REST (SELECT)   │─────▶│  rules: SECURITY DEFINER    │◀─────│  host_* functions    │
+ │  - write: guest_* RPC    │      │  functions                  │      │  with host_secret    │
+ │  - live: Realtime (WS)   │◀─────│  Realtime (postgres_changes)│─────▶│  watches the queue   │
+ │  - search: Edge Function │─────▶│ Edge Function: search ──────┼──▶ YouTube Data API       │
  └──────────────────────────┘      └─────────────────────────────┘      │  playFromUri → YT Music
                                                                         └──────────────────────┘
 ```
 
-Három szereplő, három "kulcs":
+Three actors, three "keys":
 
-| Ki | Mivel azonosítja magát | Hol él a titok | Mire jó |
+| Who | Identifies with | Where the secret lives | What it is for |
 |---|---|---|---|
-| Bárki | publishable (anon) kulcs | a weboldalban, publikus | olvasás + az RPC-k meghívása (a függvény dönt) |
-| Vendég | `guest_token` (véletlen, a szerver adja belépéskor) | a böngésző `localStorage`-ében | kérés, szavazás, keresés a saját nevében |
-| Host | `host_secret` (véletlen, a szerver adja a party létrehozásakor) | a Deck privát tárhelyén | átrendezés, törlés, léptetés, buli vége |
-| Deck app | app-kulcs (create key) | az appba fordítva, ezért publikusnak tekintjük | új party létrehozása; a kvótát projekt-szintű plafonok védik (5. pont) |
+| Anyone | publishable (anon) key | in the web page, public | reading + calling the RPCs (the function decides) |
+| Guest | `guest_token` (random, given by the server on joining) | the browser's `localStorage` | requesting, voting, searching in their own name |
+| Host | `host_secret` (random, given by the server when the party is created) | Deck's private storage | reordering, deleting, stepping, ending the party |
+| Deck app | app key (create key) | compiled into the app, so treated as public | creating a new party; the quota is protected by project-wide caps (section 5) |
 
-Az adatbázisban minden titoknak csak a SHA-256 hash-e van meg. A titkok 244 bit véletlent tartalmaznak
-(két UUID v4), ezért sózás és lassú hash (bcrypt) nem kell: nincs mit szótárból kitalálni.
+The database only keeps the SHA-256 hash of every secret. The secrets contain 244 bits of randomness
+(two UUID v4), so salting and a slow hash (bcrypt) are not needed: there is nothing to guess from a dictionary.
 
-## 2. Adatmodell
+## 2. Data model
 
-Migrációk: `supabase/migrations/`. Minden tábla a `public` sémában RLS-sel; a `private` séma nincs kitéve az API-nak.
+Migrations: `supabase/migrations/`. Every table is in the `public` schema with RLS; the `private` schema is not exposed to the API.
 
-| Tábla | Fontos oszlopok | Vendég olvashatja? |
+| Table | Important columns | Readable by guests? |
 |---|---|---|
-| `parties` | `id` (uuid), `code` (4 betű, az aktívak között egyedi), `host_secret_hash`, `status` (active/ended), `now_playing` (jsonb), `settings` (jsonb), `search_count`, `next_arrival`, `created_at`, `ended_at` | igen, de a `code`, `host_secret_hash`, `next_arrival` oszlopot nem (oszlopszintű GRANT) |
-| `party_guests` | `id`, `party_id`, `nickname`, `token_hash`, `search_count`, `last_request_at`, `created_at` | nem (a becenév a sor elemére van másolva) |
-| `party_tracks` | `party_id`, `playlist_id`, `playlist_title`, `position`, `video_id`, `title`, `artist`, `thumb`, `duration_ms` | igen |
-| `queue_items` | `id`, `party_id`, `video_id`, `title`, `artist`, `thumb`, `duration_ms`, `requested_by` (vendég id; null = host), `requested_by_name`, `arrival_index`, `net_votes`, `host_rank`, `status` (queued/playing/played/removed), `created_at` | igen |
-| `votes` | (`item_id`, `guest_id`) elsődleges kulcs, `value` (+1/-1) | nem (a saját szavazatait a `guest_state` adja vissza) |
-| `private.videos` | a keresésben látott videók adatai (`video_id`, cím, előadó, borító, hossz) | nem |
-| `private.search_cache` | normalizált keresés → találatok, 24 óráig | nem |
-| `private.app_secrets` | az app-kulcs hash-e | nem |
+| `parties` | `id` (uuid), `code` (4 letters, unique among active ones), `host_secret_hash`, `status` (active/ended), `now_playing` (jsonb), `settings` (jsonb), `search_count`, `next_arrival`, `created_at`, `ended_at` | yes, but not the `code`, `host_secret_hash`, `next_arrival` columns (column-level GRANT) |
+| `party_guests` | `id`, `party_id`, `nickname`, `token_hash`, `search_count`, `last_request_at`, `created_at` | no (the nickname is copied onto the queue item) |
+| `party_tracks` | `party_id`, `playlist_id`, `playlist_title`, `position`, `video_id`, `title`, `artist`, `thumb`, `duration_ms` | yes |
+| `queue_items` | `id`, `party_id`, `video_id`, `title`, `artist`, `thumb`, `duration_ms`, `requested_by` (guest id; null = host), `requested_by_name`, `arrival_index`, `net_votes`, `host_rank`, `status` (queued/playing/played/removed), `created_at` | yes |
+| `votes` | (`item_id`, `guest_id`) primary key, `value` (+1/-1) | no (`guest_state` returns the guest's own votes) |
+| `private.videos` | data of videos seen in searches (`video_id`, title, artist, cover, length) | no |
+| `private.search_cache` | normalized search → results, for 24 hours | no |
+| `private.app_secrets` | the hash of the app key | no |
 
-`now_playing` alakja: `{ item_id, video_id, title, artist, thumb, duration_ms, position_ms, is_playing, started_at }`.
-A `started_at` az a szerveridő, amikor a `position_ms` érvényes volt; a vendégoldal ebből számolja a
-folyamatjelzőt: `pozíció = position_ms + (most - started_at)`, ha `is_playing`. Így a szünet és a tekerés is leírható.
+Shape of `now_playing`: `{ item_id, video_id, title, artist, thumb, duration_ms, position_ms, is_playing, started_at }`.
+`started_at` is the server time at which `position_ms` was valid; the guest page computes the progress bar from it:
+`position = position_ms + (now - started_at)` if `is_playing`. This way pause and seeking can be described too.
 
-`settings` (party létrehozásakor felülírható, alapértékek):
+`settings` (can be overridden when creating the party, defaults):
 `search_per_guest` 5, `search_per_party` 40, `max_queued_per_guest` 3, `request_cooldown_s` 30, `max_guests` 50.
 
-Adatbázis-szintű biztosítékok (akkor is tartanak, ha egy függvényben hiba lenne):
-- egyedi index: `(party_id, video_id)` ahol `status in ('queued','playing')` → nincs duplikátum a sorban;
-- egyedi index: `code` ahol `status = 'active'` → két aktív bulinak nem lehet ugyanaz a kódja;
-- `votes` elsődleges kulcsa `(item_id, guest_id)` → egy vendég egy számra egy szavazat;
-- egyedi index: `(party_id, lower(nickname))` → egy bulin belül nincs két egyforma becenév.
+Database-level safeguards (they hold even if a function had a bug):
+- unique index: `(party_id, video_id)` where `status in ('queued','playing')` → no duplicates in the queue;
+- unique index: `code` where `status = 'active'` → two active parties cannot share a code;
+- the primary key of `votes` is `(item_id, guest_id)` → one vote per guest per song;
+- unique index: `(party_id, lower(nickname))` → no two identical nicknames within a party.
 
-## 3. Jogosultságok: ki mit érhet el
+## 3. Permissions: who can reach what
 
-A projektben az "Automatically expose new tables" ki van kapcsolva, ezért a migrációk mindent explicit adnak meg:
+"Automatically expose new tables" is turned off in the project, so the migrations grant everything explicitly:
 
-- **Táblák**: az `anon` szerep csak `SELECT`-et kap, és csak arra, ami a vendégoldalhoz kell
-  (`parties` megengedett oszlopai, `queue_items`, `party_tracks`, `queue_view`). `INSERT/UPDATE/DELETE` joga
-  senkinek nincs az API felől. Az `authenticated` szerep semmit nem kap, mert nincs bejelentkezés.
-- **RLS**: minden táblán be van kapcsolva. A három olvasható táblán `SELECT` policy van az `anon` szerepnek;
-  a `party_guests` és `votes` táblán nincs policy, tehát kívülről láthatatlan.
-- **Írás**: kizárólag `SECURITY DEFINER` függvényeken át (a függvény a tulajdonosa jogaival fut, így ő
-  írhat; a hívó csak azt tudja megtenni, amit a függvény megenged). Minden függvény `search_path = ''`-rel fut
-  (nem lehet más sémából becsempészett objektummal eltéríteni), és az `EXECUTE` jog explicit: a vendég- és
-  host-függvényekre `anon`, a keresés belső függvényeire csak `service_role`.
-- **Párhuzamosság**: minden író függvény először zárolja a party sorát (`SELECT ... FOR UPDATE`), így egy
-  bulin belül az írások sorban futnak: a limitek és az `arrival_index` versenyhelyzet nélkül számolhatók.
+- **Tables**: the `anon` role gets only `SELECT`, and only on what the guest page needs
+  (the allowed columns of `parties`, `queue_items`, `party_tracks`, `queue_view`). Nobody has `INSERT/UPDATE/DELETE`
+  rights from the API. The `authenticated` role gets nothing, because there is no sign-in.
+- **RLS**: enabled on every table. The three readable tables have a `SELECT` policy for the `anon` role;
+  `party_guests` and `votes` have no policy, so they are invisible from outside.
+- **Writing**: only through `SECURITY DEFINER` functions (the function runs with its owner's rights, so it can
+  write; the caller can only do what the function allows). Every function runs with `search_path = ''`
+  (it cannot be hijacked with an object smuggled in from another schema), and `EXECUTE` is granted explicitly:
+  `anon` for the guest and host functions, only `service_role` for the internal search functions.
+- **Concurrency**: every writing function first locks the party row (`SELECT ... FOR UPDATE`), so within a
+  party the writes run one after the other: limits and `arrival_index` are computed without race conditions.
 
-Miért `using (true)` az olvasási policy? A vendégnek nincs bejelentkezése, a Realtime pedig csak a szerep
-alapján tud RLS-t ellenőrizni, ezért sor szinten nem tudjuk a "saját" bulijára szűkíteni. Amit így bárki
-olvashat: számcímek és becenevek. Amit nem: a belépőkód, a tokenek, a hash-ek, és hogy ki mire szavazott.
-Írni a kód ismerete nélkül nem lehet, mert vendég token csak `guest_join(kód)`-dal szerezhető.
+Why is the read policy `using (true)`? Guests have no sign-in, and Realtime can only check RLS by role, so we
+cannot narrow it to "their own" party at row level. What anyone can read this way: song titles and nicknames.
+What they cannot: the join code, the tokens, the hashes, and who voted for what.
+Writing is impossible without knowing the code, because a guest token can only be obtained with `guest_join(code)`.
 
-## 4. Függvények (RPC)
+## 4. Functions (RPC)
 
-Minden függvény JSON-t ad vissza: `{ "ok": true, ... }` vagy `{ "ok": false, "error": "<kód>", ... }`.
-A szerver hibakódot ad, a magyar szöveget a kliens írja ki (weboldal: `app.js`, Deck: `strings.xml`).
+Every function returns JSON: `{ "ok": true, ... }` or `{ "ok": false, "error": "<code>", ... }`.
+The server returns an error code; the client writes the Hungarian text (web page: `app.js`, Deck: `strings.xml`).
 
-| Függvény | Ki hívja | Mit csinál |
+| Function | Called by | What it does |
 |---|---|---|
-| `create_party(create_key, settings)` | Deck | takarít, kódot, host_secretet és link-tokent generál; visszaadja: `party_id`, `code`, `host_secret` (csak most, egyszer), `link_token` |
-| `guest_peek(code, link?)` | vendég | név előtt: él-e még a linkben szereplő buli (kód + link-token; token nélkül, kézzel beírt kódnál a kód is elég) |
-| `guest_join(code, nickname, link?)` | vendég | becenév ellenőrzése, vendég létrehozása; rossz link-tokennel `party_not_found`; visszaadja: `party_id`, `guest_id`, `guest_token` |
-| `guest_state(party_id, token)` | vendég | saját szavazatok, hátralévő keresések, cooldown, szerveridő |
-| `guest_request(party_id, token, video_id)` | vendég | szám kérése (szabályok: 5. pont) |
-| `guest_vote(party_id, token, item_id, value)` | vendég | +1 / -1 / 0 (visszavonás); saját kérésre nem lehet |
-| `guest_cancel(party_id, token, item_id)` | vendég | saját, még sorban álló kérés visszavonása |
-| `host_state(party_id, secret)` | Deck | party, vendégek, rendezett sor egyben |
-| `host_set_tracks(party_id, secret, tracks, replace)` | Deck | playlist-számok feltöltése (darabokban, max. 5000) |
-| `host_add(party_id, secret, track)` | Deck | a host tesz számot a sorba |
-| `host_move(party_id, secret, item_id, position)` | Deck | kézi átrendezés (rögzítés, 6. pont) |
-| `host_unpin(party_id, secret, item_id)` | Deck | rögzítés feloldása |
-| `host_remove(party_id, secret, item_id)` | Deck | törlés a sorból |
-| `host_advance(party_id, secret, item_id?)` | Deck | következő szám (vagy egy megadott elem) → `playing`, `now_playing` beállítása |
-| `host_set_now_playing(party_id, secret, now)` | Deck | most szóló szám / szünet / tekerés jelentése |
-| `host_end(party_id, secret)` | Deck | buli vége, adatok törlése |
-| `search_begin / search_finish / search_fail` | csak az Edge Function (`service_role`) | keresési limit foglalása, cache, visszatérítés |
-| `cover_live_parties()` | csak a `cover` Edge Function (`service_role`) | az aktív bulik id-jai (a takarításhoz) |
-| `test_age_party / test_run_cleanup` | csak a tesztek (teszt-kulccsal) | egy TESZT buli "öregítése" és a takarítás lefuttatása |
+| `create_party(create_key, settings)` | Deck | cleans up, generates the code, host_secret and link token; returns `party_id`, `code`, `host_secret` (only now, once), `link_token` |
+| `guest_peek(code, link?)` | guest | before the name: is the party in the link still alive (code + link token; without a token, for a code typed by hand, the code is enough) |
+| `guest_join(code, nickname, link?)` | guest | checks the nickname, creates the guest; a wrong link token gives `party_not_found`; returns `party_id`, `guest_id`, `guest_token` |
+| `guest_state(party_id, token)` | guest | own votes, searches left, cooldown, server time |
+| `guest_request(party_id, token, video_id)` | guest | requests a song (rules: section 5) |
+| `guest_vote(party_id, token, item_id, value)` | guest | +1 / -1 / 0 (withdraw); not on your own request |
+| `guest_cancel(party_id, token, item_id)` | guest | withdraws your own request that is still waiting |
+| `host_state(party_id, secret)` | Deck | party, guests and the ordered queue in one |
+| `host_set_tracks(party_id, secret, tracks, replace)` | Deck | uploads playlist songs (in chunks, at most 5000) |
+| `host_add(party_id, secret, track)` | Deck | the host puts a song into the queue |
+| `host_move(party_id, secret, item_id, position)` | Deck | manual reordering (pinning, section 6) |
+| `host_unpin(party_id, secret, item_id)` | Deck | releases a pin |
+| `host_remove(party_id, secret, item_id)` | Deck | removes from the queue |
+| `host_advance(party_id, secret, item_id?)` | Deck | next song (or a given item) → `playing`, sets `now_playing` |
+| `host_set_now_playing(party_id, secret, now)` | Deck | reports the song playing now / pause / seek |
+| `host_end(party_id, secret)` | Deck | ends the party, deletes the data |
+| `search_begin / search_finish / search_fail` | only the Edge Function (`service_role`) | reserves the search limit, cache, refund |
+| `cover_live_parties()` | only the `cover` Edge Function (`service_role`) | ids of the active parties (for the cleanup) |
+| `test_age_party / test_run_cleanup` | only the tests (with the test key) | "ages" a TEST party and runs the cleanup |
 
-A vendég csak olyan `video_id`-t kérhet, amit a szerver ismer: a party `party_tracks` sorai közül vagy egy
-korábbi keresés találatai közül (`private.videos`). A címet, előadót, borítót a szerver másolja a sorba, a
-vendég nem küldhet saját szöveget, így nem lehet hamis címmel vagy szeméttel teleírni a sort.
+A guest can only request a `video_id` the server knows: from the party's `party_tracks` rows or from the
+results of an earlier search (`private.videos`). The server copies title, artist and cover into the queue;
+the guest cannot send their own text, so the queue cannot be filled with fake titles or junk.
 
-## 5. Szabályok spam ellen
+## 5. Rules against spam
 
-| Szabály | Hol van kikényszerítve | Hibakód |
+| Rule | Where it is enforced | Error code |
 |---|---|---|
-| csak aktív (és 12 óránál fiatalabb) partira lehet írni | minden függvény elején | `party_not_found` |
-| becenév 1–20 karakter, trimmelve, vezérlőkarakterek nélkül, alap trágárságszűrés, bulin belül egyedi | `guest_join` | `bad_nickname`, `nickname_taken` |
-| max. 50 vendég bulinként | `guest_join` | `party_full` |
-| ugyanaz a `video_id` nem lehet kétszer a sorban (queued/playing) | `guest_request` + egyedi index | `duplicate` |
-| max. 3 sorban álló szám vendégenként | `guest_request` | `too_many` |
-| 30 mp két kérés között vendégenként | `guest_request` | `cooldown` (+ `wait_s`) |
-| egy vendég egy számra egy szavazat (módosítható, visszavonható) | `guest_vote` + elsődleges kulcs | – |
-| saját kérésre nem lehet szavazni | `guest_vote` | `own_item` |
-| vendégenként 5, bulinként 40 keresés | `search_begin` | `search_limit_guest`, `search_limit_party` |
-| host-művelet csak a `host_secret`-tel | minden `host_*` függvény | `forbidden` |
-| party létrehozása csak az app-kulccsal | `create_party` | `forbidden` |
-| az egész projektre: max. 2 buli egyszerre, 10 buli/nap, 50 vendégkeresés/nap (Phase 8, a kulcs az APK-ban publikus) | `create_party`, `search_begin` | `too_many_parties`, `party_limit_day`, `search_limit_day` |
+| only an active party (younger than 12 hours) can be written to | at the start of every function | `party_not_found` |
+| nickname 1–20 characters, trimmed, no control characters, basic profanity filter, unique in the party | `guest_join` | `bad_nickname`, `nickname_taken` |
+| at most 50 guests per party | `guest_join` | `party_full` |
+| the same `video_id` cannot be in the queue twice (queued/playing) | `guest_request` + unique index | `duplicate` |
+| at most 3 waiting songs per guest | `guest_request` | `too_many` |
+| 30 s between two requests per guest | `guest_request` | `cooldown` (+ `wait_s`) |
+| one vote per guest per song (can be changed and withdrawn) | `guest_vote` + primary key | – |
+| no voting on your own request | `guest_vote` | `own_item` |
+| 5 searches per guest, 40 per party | `search_begin` | `search_limit_guest`, `search_limit_party` |
+| host actions only with the `host_secret` | every `host_*` function | `forbidden` |
+| creating a party only with the app key | `create_party` | `forbidden` |
+| for the whole project: at most 2 parties at a time, 10 parties/day, 50 guest searches/day (Phase 8: the key in the APK is public) | `create_party`, `search_begin` | `too_many_parties`, `party_limit_day`, `search_limit_day` |
 
-Őszinte korlát: bejelentkezés nélkül a "vendég" egy böngésző-token. Aki törli a böngésző adatait, új vendégként
-léphet be, és újra kap 3 kérést. Ezt bulinkénti plafonok fogják meg (50 vendég, 40 keresés), és a host
-bármit törölhet. Egy házibulihoz ez elég; a nyilvános internethez nem lenne az.
+An honest limit: without sign-in a "guest" is a browser token. Someone who clears their browser data can join
+as a new guest and gets 3 requests again. Per-party caps (50 guests, 40 searches) catch this, and the host
+can delete anything. That is enough for a house party; it would not be for the public internet.
 
-## 6. Sorrend
+## 6. Order
 
-A sorrendet **a szerver** számolja a `queue_view` nézetben (`position` oszlop); a kliensek csak
-megjelenítik. Így a weboldal, a Deck és a tesztek biztosan ugyanazt látják.
+**The server** computes the order in the `queue_view` view (`position` column); clients only display it.
+This way the web page, Deck and the tests are guaranteed to see the same thing.
 
-**1. szabály – érkezés.** Minden kérés kap egy `arrival_index`-et (1, 2, 3, … bulinként). Szavazatok
-nélkül ez a sorrend.
+**Rule 1 – arrival.** Every request gets an `arrival_index` (1, 2, 3, … per party). Without votes this is the order.
 
-**2. szabály – szavazatok: egy szavazat = pontosan egy hely.** `net_votes` = like-ok − dislike-ok (ez a
-kijelzett pontszám). A sorrendet viszont nem képlet adja, hanem a **tárolt helyzet** (`free_rank`): minden
-szavazás annyi helyet mozdít a számon, amennyit a vendég szavazata változott, a szomszédjával cserélve:
+**Rule 2 – votes: one vote = exactly one place.** `net_votes` = likes − dislikes (this is the score shown).
+The order, however, does not come from a formula but from a **stored position** (`free_rank`): every vote
+moves the song by as many places as the guest's vote changed, swapping it with its neighbour:
 
-| A vendég szavazata | Mozgás |
+| The guest's vote | Movement |
 |---|---|
-| nincs → like | 1 hely fel |
-| nincs → dislike | 1 hely le |
-| like → dislike | 2 hely le |
-| dislike → like | 2 hely fel |
-| like / dislike visszavonva | 1 hely vissza |
-| ugyanaz még egyszer | semmi |
+| none → like | 1 place up |
+| none → dislike | 1 place down |
+| like → dislike | 2 places down |
+| dislike → like | 2 places up |
+| like / dislike withdrawn | 1 place back |
+| the same again | nothing |
 
-Az első szabad szám feljebb, az utolsó lejjebb nem megy (a szavazat ettől még számít a pontszámban). Új kérés
-mindig a szabad sor végére kerül. Döntetlen nem lehet: a `free_rank` minden várakozó számnál különböző.
+The first free song does not go higher, the last does not go lower (the vote still counts in the score). A new
+request always goes to the end of the free queue. There are no ties: `free_rank` is different for every waiting song.
 
-*Miért nem képlet (Phase 10 javítás)?* Korábban `kulcs = arrival_index − net_votes × 1,5` volt. Egy like csak
-akkor vitt át a felette lévőn, ha a kettejük érkezési száma 1-nél kevesebbel tért el, de ez gyakran nem igaz:
-az elhangzott, törölt, visszavont számok lyukat hagynak, és egy átszavazott szám is. Példa: A1 B2 C3 D4,
-like C-re → A C B D; like D-re: D kulcsa 4 − 1,5 = 2,5, B-é 2 → D **nem mozdult**, pedig közvetlenül B alatt
-volt. Ugyanabban a helyzetben a sűrű sorszám (row_number érkezési sorrendben) sem segít, mert D ott is 4., B 2.
-A tárolt helyzettel minden szavazás pontosan a szomszédot lépi át.
+*Why not a formula (Phase 10 fix)?* It used to be `key = arrival_index − net_votes × 1.5`. A like only moved
+a song past the one above it if their arrival numbers differed by less than 1.5, which is often not true:
+played, deleted and withdrawn songs leave holes, and so does a song that was voted past another. Example:
+A1 B2 C3 D4, like on C → A C B D; like on D: D's key is 4 − 1.5 = 2.5, B's is 2 → D **did not move**, although
+it was right below B. In the same situation a dense number (row_number in arrival order) does not help either,
+because D is 4th there too and B 2nd. With the stored position every vote steps over exactly the neighbour.
 
-**3. szabály – a host mindig nyer.** Ha a host kézzel áthelyez egy számot, az `host_rank`-ot kap: ez a
-**helyének sorszáma** a sorban (1 = következő). A rögzített szám azon a helyen marad, a szavazatok nem
-mozdítják. A többi (nem rögzített) szám a tárolt helyzete szerinti sorrendben tölti ki a szabadon maradt
-helyeket. Szavazáskor a szabad számok egymás közt cserélnek helyet; a rögzítettet "átugorják".
+**Rule 3 – the host always wins.** If the host moves a song by hand, it gets a `host_rank`: the **number of its
+slot** in the queue (1 = next). The pinned song stays in that slot; votes do not move it. The other (not pinned)
+songs fill the free slots in their stored order. On a vote the free songs swap places among themselves; they
+"jump over" the pinned ones.
 
-Hogy a rögzített helyek értelmesek maradjanak, amikor a sor változik:
-- ha egy előrébb álló szám kikerül a sorból (elindul, törlik, visszavonják), a mögötte lévő rögzített számok
-  `host_rank`-ja eggyel csökken (együtt lépnek előre a sorral);
-- ha a host egy számot áthúz a rögzítettek fölött, a közbeesők eggyel elcsúsznak, pont úgy, ahogy a
-  húzásnál a képernyőn látszik;
-- új kérés mindig a végére érkezik, a rögzítetteket nem érinti.
+To keep the pinned slots meaningful when the queue changes:
+- if a song further ahead leaves the queue (starts, is deleted or withdrawn), the `host_rank` of the pinned
+  songs behind it decreases by one (they move forward with the queue);
+- if the host drags a song over pinned ones, the ones in between shift by one, just as the drag shows on screen;
+- a new request always arrives at the end and does not affect the pinned ones.
 
-### Példa (ezt futtatja a szerver "sorrend" tesztje is)
+### Example (the server's "order" test runs this too)
 
-| Lépés | Mi történik | Szabad sor (a rögzítettek nélkül) | Sor |
+| Step | What happens | Free queue (without pinned songs) | Queue |
 |---|---|---|---|
-| 1 | A, B, C, D, E érkezik ebben a sorrendben | A B C D E | A B C D E |
-| 2 | E kap egy like-ot | E egy hellyel feljebb | A B C **E** D |
-| 3 | E kap még egy like-ot | még egy hely | A B **E** C D |
-| 4 | B kap egy dislike-ot | B egy hellyel lejjebb | A E **B** C D |
-| 5 | A host D-t az 1. helyre húzza | D rögzítve: `host_rank` = 1; szabad: A E B C | **D** A E B C |
-| 6 | D kap három dislike-ot | D rögzített, nem mozdul | D A E B C |
-| 7 | C kap három like-ot (három vendégtől) | C három hellyel feljebb: C A E B | D **C** A E B |
-| 8 | A host lépteti a sort (`host_advance`) | D szól; a sorból kikerült | C A E B |
+| 1 | A, B, C, D, E arrive in this order | A B C D E | A B C D E |
+| 2 | E gets a like | E one place up | A B C **E** D |
+| 3 | E gets another like | one more place | A B **E** C D |
+| 4 | B gets a dislike | B one place down | A E **B** C D |
+| 5 | The host drags D to slot 1 | D pinned: `host_rank` = 1; free: A E B C | **D** A E B C |
+| 6 | D gets three dislikes | D is pinned, does not move | D A E B C |
+| 7 | C gets three likes (from three guests) | C three places up: C A E B | D **C** A E B |
+| 8 | The host steps the queue (`host_advance`) | D plays; it left the queue | C A E B |
 
-A 7. lépés a lényeg: C a szabad sor elejére ért, mégsem előzi meg D-t, mert az 1. hely foglalt.
+Step 7 is the point: C reached the front of the free queue, yet it does not overtake D, because slot 1 is taken.
 
-A "lyukas" eset és a gyors egymás utáni szavazások külön tesztje: "order: one like = exactly one place, also with
-gaps and after other moves" (2 elhangzott/törölt szám, like-ok különböző számokon, like → dislike, visszavonás,
-rögzített szám mellett, három vendég egyszerre szavaz).
+The "holes" case and quick votes in a row have their own test: "order: one like = exactly one place, also with
+gaps and after other moves" (2 played/deleted songs, likes on different songs, like → dislike, withdrawal,
+next to a pinned song, three guests voting at once).
 
-### Hogyan számolja a nézet
+### How the view computes it
 
-1. A rögzített számok a `host_rank` helyükre kerülnek.
-2. A szabad számok `free_rank` szerint sorszámot kapnak: k = 1, 2, 3, …
-3. A k-adik szabad szám helye: `k + (ahány rögzített hely van előtte)`. Egy r helyre rögzített szám
-   (a rögzítettek között j-edik) előtt `r − j` szabad hely van, tehát akkor előzi meg a k-adik szabad számot,
-   ha `r − j < k`.
-4. A végén a helyek szerint újraszámozunk (1, 2, 3, …), így akkor is folytonos a sorszám, ha egy rögzített
-   hely a sor végén túlra mutatna.
+1. Pinned songs go into their `host_rank` slots.
+2. Free songs get a number by `free_rank`: k = 1, 2, 3, …
+3. The slot of the k-th free song: `k + (the number of pinned slots before it)`. A song pinned to slot r
+   (the j-th among the pinned ones) has `r − j` free slots before it, so it comes before the k-th free song
+   if `r − j < k`.
+4. At the end the slots are renumbered (1, 2, 3, …), so the numbering stays continuous even if a pinned
+   slot points past the end of the queue.
 
-## 7. Keresés vendégeknek (Edge Function: `search`)
+## 7. Search for guests (Edge Function: `search`)
 
 `POST /functions/v1/search` `{ party_id, token, q }` → `{ ok, results, searches_left, party_searches_left, cached }`.
 
-1. `search_begin`: ellenőrzi a vendéget; a keresést normalizálja (kisbetű, trim, többszörös szóköz → egy).
-   Ha van 24 óránál frissebb cache → azonnal visszaadja, **nem számít a limitbe**. Különben ellenőrzi és
-   lefoglalja a limitet (vendég +1, party +1).
-2. YouTube Data API a szerver saját kulcsával (Edge Function secret): `search.list` (`type=video`, `videoCategoryId=10`,
-   15 találat) + `videos.list` a hosszakért.
-3. Ugyanaz a tisztítás, mint a Deckben (Phase 4): `TitleCleaner` logika (zajos zárójelek, "Előadó - Cím"
-   szétszedése, "- Topic" levágása) és duplikátumszűrés (Topic csatorna > hivatalos csatorna > bármi más;
-   a győztes az első előfordulás helyén marad). A Kotlin kód TypeScript-másolata az Edge Functionben.
-4. `search_finish`: cache-be és a `private.videos` táblába írja a találatokat (innen tudja a `guest_request`,
-   hogy a kért videó létezik).
-5. Hiba esetén `search_fail` visszaadja a lefoglalt keresést. Kvótahiba → `error: "quota"`; a weboldal
-   magyarul kiírja, és a Playlistek fül továbbra is működik (az nem használ YouTube API-t).
+1. `search_begin`: checks the guest; normalizes the search (lowercase, trim, multiple spaces → one).
+   If there is a cache entry younger than 24 hours → returns it right away, **it does not count towards the limit**.
+   Otherwise it checks and reserves the limit (guest +1, party +1).
+2. YouTube Data API with the server's own key (Edge Function secret): `search.list` (`type=video`,
+   `videoCategoryId=10`, 15 results) + `videos.list` for the lengths.
+3. The same cleaning as in Deck (Phase 4): `TitleCleaner` logic (noisy brackets, splitting "Artist - Title",
+   cutting "- Topic") and a duplicate filter (Topic channel > official channel > anything else; the winner
+   stays at the place of its first occurrence). The Edge Function has a TypeScript copy of the Kotlin code.
+4. `search_finish`: writes the results into the cache and the `private.videos` table (this is how
+   `guest_request` knows the requested video exists).
+5. On an error `search_fail` gives the reserved search back. Quota error → `error: "quota"`; the web page says so
+   in Hungarian, and the Playlists tab keeps working (it does not use the YouTube API).
 
-Kvóta: egy új keresés 101 egység (100 + 1). Egy buli legfeljebb 40 × 101 = 4040 egységet ér, a napi keret
-10 000. A szerverkulcs külön Google Cloud kulcs (nem az appé), így a buli nem a Deck saját keresőjének keretét fogyasztja, ha külön projektben van.
+Quota: a new search costs 101 units (100 + 1). A party can use at most 40 × 101 = 4040 units, the daily budget
+is 10,000. The server key is a separate Google Cloud key (not the app's), so a party does not use up the budget
+of Deck's own search if it is in a separate project.
 
 ## 8. Realtime
 
-- A `supabase_realtime` publikációban: `parties` és `queue_items`. A vendégoldal két `postgres_changes`
-  feliratkozást tart: `parties` (`id=eq.<party>`: most szól, buli vége, hátralévő keresések) és
+- In the `supabase_realtime` publication: `parties` and `queue_items`. The guest page keeps two
+  `postgres_changes` subscriptions: `parties` (`id=eq.<party>`: now playing, party over, searches left) and
   `queue_items` (`party_id=eq.<party>`).
-- A Realtime ugyanazzal az `anon` szereppel és RLS-sel ellenőriz, mint a REST, ezért kell a `SELECT` jog és policy.
-- A sorrendet nem az eseményekből rakja össze a kliens: bármilyen `queue_items` eseményre (kis késleltetéssel
-  összevonva) újra lekéri a `queue_view`-t. Egyszerűbb, és a sorrend egyetlen helyen (a szerveren) számolódik.
-- Törlés helyett státuszváltás (`removed`, `played`): a DELETE eseményekre a Realtime nem tud szűrni és RLS-t
-  ellenőrizni, az UPDATE-re igen.
-- Biztonsági háló: 20 mp-enként és a lap előtérbe kerülésekor (iPhone a háttérben bontja a WebSocketet) teljes frissítés.
+- Realtime checks with the same `anon` role and RLS as REST, which is why the `SELECT` right and policy are needed.
+- The client does not assemble the order from the events: on any `queue_items` event (merged with a short delay)
+  it fetches `queue_view` again. Simpler, and the order is computed in a single place (the server).
+- Status changes instead of deletion (`removed`, `played`): Realtime cannot filter DELETE events or check RLS on
+  them; on UPDATE it can.
+- Safety net: a full refresh every 20 s and when the page comes to the foreground (iPhone drops the WebSocket in the background).
 
-## 9. Vendég weboldal (`party-web/`, Vercel: `deck-party`)
+## 9. Guest web page (`party-web/`, Vercel: `deck-party`)
 
-- `index.html` (jelölés + CSS) és `app.js`, framework és build nélkül; `supabase-js` CDN-ről.
-- Cím: https://deck-party.vercel.app. A QR-link: `/?c=KQZT&p=k3m9x2qa` (kód + a buli saját link-tokenje, Phase 10).
-  Először `guest_peek`: ha a linkben szereplő buli már nincs (a kódot közben új buli kaphatta meg), "A buli véget ért"
-  oldal jön ("Másik buli kódja" gombbal); egy régi QR-kód így soha nem visz be egy későbbi bulira. Ha él: ha ehhez a
-  bulihoz van mentett token, egyből be; különben becenév (az előző előre kitöltve). Kód nélkül kódbeíró mező; kézzel
-  beírt kódnál elég a 4 betű (az csak aktív bulit talál).
-- Borító: ha a "most szól"-nak nincs képe, Deck-kazetta grafika (CSS, `--cassette`); a később megérkező kép
-  áttűnéssel cserélődik be. A sor bélyegképei ugyanígy.
-- `localStorage`: `deck.nickname` (utolsó becenév), `deck.party.<KÓD>` (`party_id`, `guest_id`, `guest_token`).
-- Felül "most szól" kártya; fülek: **Sor** (helyezés, kérő neve, 👍/👎, saját kérés kiemelve, visszavonható, szavazógombok nélkül) ·
-  **Playlistek** (a host listái, szűrés listára és szövegre) · **Keresés** (hátralévő keresések kiírva).
-- Kazetta stílus: ház #D8D9D3, billentyű #ECEDE7, vályú #C4C5BE, tinta #15161A, kobalt #2340D8, Archivo.
-- Minden felhasználótól származó szöveg `textContent`-tel kerül a lapra (nincs HTML-beszúrás).
+- `index.html` (markup + CSS) and `app.js`, no framework, no build; `supabase-js` from a CDN.
+- Address: https://deck-party.vercel.app. The QR link: `/?c=KQZT&p=k3m9x2qa` (the code + the party's own link
+  token, Phase 10). First `guest_peek`: if the party in the link no longer exists (a new party may have got the
+  code meanwhile), the "The party is over" page comes (with an "Another party's code" button); so an old QR code
+  never leads into a later party. If it is alive: if there is a saved token for this party, straight in;
+  otherwise the nickname (the previous one pre-filled). Without a code, a code input; for a code typed by hand
+  the 4 letters are enough (it only finds an active party).
+- Cover: if "now playing" has no image, a Deck cassette graphic (CSS, `--cassette`); an image arriving later
+  fades in. The queue's thumbnails work the same way.
+- `localStorage`: `deck.nickname` (last nickname), `deck.party.<CODE>` (`party_id`, `guest_id`, `guest_token`).
+- A "now playing" card at the top; tabs: **Queue** (position, requester's name, 👍/👎, own request highlighted,
+  can be withdrawn, without vote buttons) · **Playlists** (the host's lists, filter by list and text) ·
+  **Search** (searches left shown).
+- Cassette style: housing #D8D9D3, key #ECEDE7, trough #C4C5BE, ink #15161A, cobalt #2340D8, Archivo.
+- Every text coming from users goes onto the page with `textContent` (no HTML injection).
 
-## 10. Életciklus és takarítás
+## 10. Lifecycle and cleanup
 
-- `host_end`: `status = ended`, a party minden adata (vendégek, sor, szavazatok, playlist-számok) azonnal törlődik.
-  Maga a party sor (kód és titok nélkül értéktelen) még 1 óráig megmarad, hogy a nyitva maradt vendégoldalak
-  "A buli véget ért" üzenetet kapjanak.
-- `private.cleanup()` minden `create_party` elején ÉS óránként (pg_cron `deck-party-cleanup`, minden óra 7. percében):
-  törli a lezárt (1 óránál régebbi) és a 12 óránál régebben létrehozott partikat mindenestül, a 24 óránál régebbi
-  keresési cache-t és a 48 óránál régebbi videóadatokat. Utána ugyanez a feladat (pg_net) meghívja a `cover`
-  Edge Function `cleanup` műveletét, ami a már nem aktív bulik borító-mappáit törli (SQL-ből a Storage fájl nem
-  törölhető rendesen). A `cleanup` titok nélkül hívható: csak nem aktív bulik mappáit törölheti.
-- Borítók (Phase 10): ha a szóló számnak nincs képlinkje, a Deck a borítót 300px-es JPEG-ként feltölti a `cover`
-  Edge Functionnel (`upload`, a host titkával ellenőrizve) a publikus `party-covers` bucketbe, bulinként külön
-  mappába (`<party_id>/<kulcs>.jpg`). Írni csak a függvény tud (nincs storage policy). A buli végén a Deck `purge`-öt
-  hív, különben az óránkénti takarítás viszi. A kép CDN-gyorsítótára 60 mp: törlés után legfeljebb ennyi ideig érhető el.
-- A 12 órás határ a takarítástól függetlenül is él: 12 óránál régebbi partira egyik függvény sem ír.
+- `host_end`: `status = ended`, all data of the party (guests, queue, votes, playlist songs) is deleted at once.
+  The party row itself (worthless without the code and the secret) stays for 1 more hour, so guest pages left
+  open get the "The party is over" message.
+- `private.cleanup()` at the start of every `create_party` AND every hour (pg_cron `deck-party-cleanup`, at
+  minute 7 of every hour): deletes ended parties (older than 1 hour) and parties created more than 12 hours ago
+  with everything they have, the search cache older than 24 hours and video data older than 48 hours. Then the
+  same job (pg_net) calls the `cleanup` action of the `cover` Edge Function, which deletes the cover folders of
+  parties that are no longer active (Storage files cannot be deleted properly from SQL). `cleanup` can be called
+  without a secret: it can only delete folders of inactive parties.
+- Covers (Phase 10): if the playing song has no image link, Deck uploads the cover as a 300px JPEG through the
+  `cover` Edge Function (`upload`, checked with the host secret) into the public `party-covers` bucket, a
+  separate folder per party (`<party_id>/<key>.jpg`). Only the function can write (no storage policy). At the
+  end of the party Deck calls `purge`, otherwise the hourly cleanup takes it. The image's CDN cache is 60 s:
+  after deletion it is reachable for at most that long.
+- The 12-hour limit holds independently of the cleanup: no function writes to a party older than 12 hours.
 
-## 11. A Deck oldala röviden
+## 11. Deck's side in short
 
-- A host a playerről indít bulit (playlistek kiválasztása, `create_party`, `host_set_tracks` darabokban, QR-kód).
-- A léptetést egy tiszta Kotlin motor dönti el (nincs benne Android, hálózat, óra), egy foreground service hajtja végre:
-  a szám vége előtt ~1,5 mp-cel `playFromUri(watch?v=<a sor eleje>)`, utána `host_advance`. Előbb a lejátszás, aztán a
-  hálózat: a váltás nem várhat a szerverre.
-- Ha a YT Music magától (autoplay) más számot indít, és a sor nem üres, a motor azonnal felülírja a sor elejével.
-  Üres sornál a YT Music megy tovább, a Deck csak jelenti, mi szól.
-- Bizonytalan egyezés soha nem indít új számot (a YT Music nem ad videóazonosítót, csak címet).
-- Realtime helyett lekérdezés: 3 mp, ha a host nézet látszik, 10 mp a háttérben.
+- The host starts a party from the player (choosing playlists, `create_party`, `host_set_tracks` in chunks, QR code).
+- A pure Kotlin engine decides the stepping (no Android, network or clock in it), a foreground service carries
+  it out: about 1.5 s before the end of the song `playFromUri(watch?v=<head of the queue>)`, then
+  `host_advance`. Playback first, network second: the switch cannot wait for the server.
+- If YT Music starts another song by itself (autoplay) and the queue is not empty, the engine overrides it with
+  the head of the queue at once. With an empty queue YT Music goes on, and Deck only reports what plays.
+- An uncertain match never starts a new song (YT Music gives no video id, only a title).
+- Polling instead of Realtime: 3 s while the host view is visible, 10 s in the background.
 
-## 12. Ismert korlátok
+## 12. Known limits
 
-- A 4 betűs kód (24⁴ ≈ 330 ezer) nem erős titok: aki végigpróbálja, be tud lépni vendégként. A kár korlátos
-  (limitek, a host törölhet), a host-műveletekhez ez nem elég.
-- Vendég-azonosság = böngésző-token (lásd 5. pont).
-- A folyamatjelző a host jelentéseire támaszkodik: ha a Deck nem jelenti a szünetet, a vendégoldalon tovább megy a csík.
-- A keresés a YouTube-on keres, nem a YT Music katalógusában (ugyanaz a korlát, mint a Phase 4-ben).
-- A `party_tracks` legfeljebb 5000 szám bulinként.
+- The 4-letter code (24⁴ ≈ 330 thousand) is not a strong secret: someone who tries them all can join as a
+  guest. The damage is limited (limits, the host can delete); it is not enough for host actions.
+- Guest identity = browser token (see section 5).
+- The progress bar relies on the host's reports: if Deck does not report a pause, the bar keeps running on the guest page.
+- The search searches YouTube, not the YT Music catalogue (the same limit as in Phase 4).
+- `party_tracks` holds at most 5000 songs per party.
