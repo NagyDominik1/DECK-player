@@ -1,0 +1,17 @@
+Copyright (c) 2026 Dominik Nagy. All rights reserved.
+
+This repository (texts, images, animations and code excerpts) may be viewed for evaluation purposes.
+No permission is granted to copy, modify, distribute or use any part of it without written permission.
+
+The released Deck APK may be installed and used for personal, non-commercial purposes.
+
+Third-party components inside the app keep their own licenses:
+
+- Archivo font, Copyright 2020 The Archivo Project Authors (https://github.com/Omnibus-Type/Archivo),
+  SIL Open Font License, Version 1.1 (full text: licenses/OFL-Archivo.txt).
+- AndroidX / Jetpack Compose, ZXing core (https://github.com/zxing/zxing),
+  Reorderable (https://github.com/Calvin-LL/Reorderable): Apache License 2.0.
+- Google Play services: Android Software Development Kit License.
+
+YouTube, YouTube Music and Google are trademarks of Google LLC. Deck is not affiliated with or endorsed by Google.
+Album covers visible in the screenshots belong to their respective owners.
