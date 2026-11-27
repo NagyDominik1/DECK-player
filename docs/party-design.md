@@ -3,6 +3,12 @@
 
 # Party mode ("Aux"): the full design (Phase 6A + 6B)
 
+> **Update in 1.2:** this is the design of the first party mode (1.0–1.1). Since 1.2 the party has no queue,
+> likes or ranking of its own: a request goes into Deck's own "Play next" queue in arrival order, guests see
+> Deck's "Up next" order, the only vote is 👎 (three take any song out), and a guest can move a song of the
+> playing list forward. The security model, the limits and the cleanup below are unchanged. Why it changed:
+> [README, decision 9](../README.md#9-party-mode-from-a-separate-queue-to-one-player).
+
 Status: built and running (server, guest web page, Deck's host side).
 
 ## 1. In one sentence

@@ -12,6 +12,7 @@ Third-party components inside the app keep their own licenses:
 - AndroidX / Jetpack Compose, ZXing core (https://github.com/zxing/zxing),
   Reorderable (https://github.com/Calvin-LL/Reorderable): Apache License 2.0.
 - Google Play services: Android Software Development Kit License.
+- DJ pad sounds from Freesound (https://freesound.org): Creative Commons 0 1.0 (public domain dedication).
 
 YouTube, YouTube Music and Google are trademarks of Google LLC. Deck is not affiliated with or endorsed by Google.
 Album covers visible in the screenshots belong to their respective owners.

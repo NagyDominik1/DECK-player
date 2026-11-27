@@ -3,6 +3,12 @@
 
 # Buli mód ("Aux") – teljes terv (Phase 6A + 6B)
 
+> **Frissítés az 1.2-ben:** ez az első buli mód terve (1.0–1.1). Az 1.2 óta a bulinak nincs saját sora,
+> lájkja és rangsora: a kérés érkezési sorrendben a Deck saját „Következőnek” sorába kerül, a vendégek a Deck
+> „Következik” sorrendjét látják, az egyetlen szavazat a 👎 (három bármelyik számot kiveszi), és a vendég a
+> lejátszási lista egy számát előrehozhatja. A lenti biztonsági modell, a limitek és a takarítás nem változott.
+> A váltás oka: [README, 9. döntés](../README.md#9-party-mode-from-a-separate-queue-to-one-player).
+
 Állapot: megépült és fut (szerver, vendég weboldal, a Deck host oldala).
 
 ## 1. Mi ez egy mondatban
