@@ -40,7 +40,7 @@ public Android APIs.**
 
 | Home screen | Player | Synced lyrics |
 |---|---|---|
-| ![Home screen](media/home.jpg) | ![Player](media/player.jpg) | ![Lyrics](media/lyrics.jpg) |
+| <img src="media/home.jpg" alt="Home screen" width="250"> | <img src="media/player.jpg" alt="Player" width="250"> | <img src="media/lyrics.jpg" alt="Lyrics" width="250"> |
 
 - **Home screen ("lobby").** Search, mood keys (workout, chill, party and more) and four cover-fan cards:
   FRISS (recent), TOP, KEDVELT (liked) and MIX. They are built from the listening history on the phone and the
@@ -68,15 +68,15 @@ public Android APIs.**
 
 The cards change on every pull-down, and the player grows out of the mini-player:
 
-<img src="media/lobby-refresh.gif" alt="Pulling down on the home screen deals new covers on all four cards" width="300"> <img src="media/mini-player.gif" alt="Dragging between the mini-player and the full player" width="300">
+<img src="media/lobby-refresh.gif" alt="Pulling down on the home screen deals new covers on all four cards" width="250"> <img src="media/mini-player.gif" alt="Dragging between the mini-player and the full player" width="250">
 
 **Track change.** The old cover slides out in the direction of the skip and blurs, the new one comes in sharp:
 
-<img src="media/track-change.gif" alt="Track change animation" width="300">
+<img src="media/track-change.gif" alt="Track change animation" width="250">
 
 | Search | "Következik" (Up next) |
 |---|---|
-| ![Search](media/search.jpg) | ![Up next](media/up-next.jpg) |
+| <img src="media/search.jpg" alt="Search" width="250"> | <img src="media/up-next.jpg" alt="Up next" width="250"> |
 
 **"Következik" (Up next).** A full-screen view with Deck's own queue on top and YouTube Music's whole queue
 below. Songs moved forward or swiped out stay in place, greyed and marked ("ELŐREHOZVA" / "KIHAGYVA"), with undo.
@@ -85,7 +85,7 @@ below. Songs moved forward or swiped out stay in place, greyed and marked ("ELŐ
 
 | Output and EQ | DJ pad, tape shelf, sleep timer |
 |---|---|
-| ![PULT: output and EQ](media/pult.jpg) | ![PULT: DJ pad, tape shelf and sleep timer](media/pult-pads.jpg) |
+| <img src="media/pult.jpg" alt="PULT: output and EQ" width="250"> | <img src="media/pult-pads.jpg" alt="PULT: DJ pad, tape shelf and sleep timer" width="250"> |
 
 The blue tab on the left edge opens the PULT, the mirror image of the party view on the right.
 
@@ -99,13 +99,13 @@ The blue tab on the left edge opens the PULT, the mirror image of the party view
 - **Tape shelf.** Every week becomes a cassette with that week's top 10, built from the history on the phone.
 - **Sleep timer.** 15, 30 or 60 minutes, or until the end of the song; the music fades out and stops.
 
-<img src="media/pult-transition.gif" alt="Opening the PULT from the home screen and sliding back" width="300">
+<img src="media/pult-transition.gif" alt="Opening the PULT from the home screen and sliding back" width="250">
 
 ### Party mode ("Buli")
 
 | Host view | QR code | Up next during a party |
 |---|---|---|
-| ![Host](media/party-host.jpg) | ![QR](media/party-qr.jpg) | ![Up next with guest requests](media/party-up-next.jpg) |
+| <img src="media/party-host.jpg" alt="Host" width="250"> | <img src="media/party-qr.jpg" alt="QR" width="250"> | <img src="media/party-up-next.jpg" alt="Up next with guest requests" width="250"> |
 
 - The host starts a party from the song that plays and shows a QR code. Guests open a web page with **no app and
   no account**, pick a nickname and request songs by search, or move a song of the playing list forward with ↑.
@@ -119,11 +119,11 @@ The blue tab on the left edge opens the PULT, the mirror image of the party view
 
 The party view lives to the right of the player, like winding a cassette:
 
-<img src="media/party-transition.gif" alt="Sliding from the player to the party view and back" width="300">
+<img src="media/party-transition.gif" alt="Sliding from the player to the party view and back" width="250">
 
 The guest page on a phone, and joining, moving a song forward, the third 👎 taking a song out:
 
-<img src="media/guest-phone.jpg" alt="Guest web page on a phone" width="300"> <img src="media/guest-page.gif" alt="Guest web page: joining, moving a song forward, voting a song out" width="300">
+<img src="media/guest-phone.jpg" alt="Guest web page on a phone" width="250"> <img src="media/guest-page.gif" alt="Guest web page: joining, moving a song forward, voting a song out" width="250">
 
 On a laptop the guest page shows two columns:
 
